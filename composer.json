@@ -1,0 +1,33 @@
+{
+    "name": "coderockr/pagseguro",
+    "description": "Silex Controller Provider to provide Pagseguro support",
+    "type": "library",
+    "authors": [
+        {
+            "name": "Elton Minetto",
+            "email": "eminetto@coderockr.com",
+            "homepage": "http://eltonminetto.net/",
+            "role": "Developer"
+        }
+    ],
+    "keywords": [
+        "framework",
+        "silex",
+        "pagseguro",
+	    "provider"
+    ],
+    "homepage": "http://coderockr.com/",
+    "license": "BSD-3-Clause",
+    "minimum-stability": "dev",
+    "require": {
+        "php": ">=5.3.3",
+        "silex/silex": "*",
+        "symfony/http-kernel": "*",
+        "kriswallsmith/buzz": "*"
+    },
+    "autoload": {
+        "psr-0": {
+            "Coderockr\\Pagseguro": "src/"
+        }
+    }
+}
