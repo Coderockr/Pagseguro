@@ -47,9 +47,7 @@ interface TransactionInterface
 
     public function setCoupon($coupon);
 
-    /**
-     * Save a new transaction
-     * @return boolean
-     */
-    public function save();
+    public function setCode($code);
+
+    public function setStatus($status);
 }
