@@ -22,6 +22,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
     private $itemClass;
     private $transactionClass;
     private $em;
+    private $log;
 
     public function setEntityManager($em)
     {
@@ -100,6 +101,16 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         return $this->transactionClass = $transactionClass;
     }
 
+    public function getLog()
+    {
+        return $this->log;
+    }
+     
+    public function setLog($log)
+    {
+        return $this->log = $log;
+    }
+
     public function connect(Application $app)
     {
         $this->setEntityManager($app['orm.em']);
@@ -120,7 +131,8 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 }
             }
             //save a transaction to get the id to use in reference
-            $transaction = new $this->getTransactionClass();
+            $className = $this->getTransactionClass();
+            $transaction = new $className;
             $transaction->setBuyer($this->getBuyerInstance());
             $transaction->setItem($item);
             $transaction->setCoupon($coupon);
@@ -153,13 +165,17 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         try {
             $responseXML = new SimpleXMLElement($response->getContent());    
         } catch (Exception $e) {
-            $app['monolog']->addError($e->getMessage());
+            if ($this->getLog()) {
+                $this->getLog()->addError($e->getMessage());
+            }
             throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro.", 1);
         }
         
         if (count($responseXML->xpath('/errors')) > 0) {
-            $app['monolog']->addError($responseXML->asXml());
-            throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro.", 1);
+            if ($this->getLog()) {
+                $this->getLog()->addError($responseXML->asXml());
+            }
+            throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro: " . $responseXML->asXml(), 1);
         }
             
         $code = array_shift($responseXML->xpath('/checkout/code'));
