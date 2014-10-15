@@ -17,7 +17,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
 {
     private $token;
     private $email;
-    private $buyerInstance;
+    private $buyerClass;
     private $couponClass;
     private $itemClass;
     private $transactionClass;
@@ -49,17 +49,17 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         return $this->email = $email;
     }
 
-    public function getBuyerInstance()
+    public function getBuyerClass()
     {
-        return $this->buyerInstance;
+        return $this->buyerClass;
     }
      
-    public function setBuyerInstance($buyerInstance)
+    public function setBuyerClass($buyerClass)
     {
-        if (!in_array('Coderockr\Pagseguro\BuyerInterface', class_implements($buyerInstance))) {
+        if (!in_array('Coderockr\Pagseguro\BuyerInterface', class_implements($buyerClass))) {
             throw new Exception("Class must implements BuyerInterface", 1);
         }
-        return $this->buyerInstance = $buyerInstance;
+        return $this->buyerClass = $buyerClass;
     }
 
     public function getCouponClass()
@@ -116,15 +116,19 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         $this->setEntityManager($app['orm.em']);
         $controllers = $app['controllers_factory'];
 
-        
-        $controllers->get('/{item}/{coupon}', function (Application $app, $item, $coupon, Request $request) {
+        $controllers->get('/{user}/{item}/{coupon}', function (Application $app, $user, $item, $coupon, Request $request) {
+            //get user
+            $user = $this->em->getRepository($this->getBuyerClass())->find($user);
+            if (!$user) {
+                throw new Exception("User not found", 1);
+            }
             //get item
             $item = $this->em->getRepository($this->getItemClass())->find($item);
             if (!$item) {
                 throw new Exception("Item not found", 1);
             }
             if ($coupon) {
-                //get item
+                //get coupon
                 $coupon = $this->em->getRepository($this->getCouponClass())->find($coupon);
                 if (!$coupon) {
                     throw new Exception("Coupon not found", 1);
@@ -133,10 +137,12 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             //save a transaction to get the id to use in reference
             $className = $this->getTransactionClass();
             $transaction = new $className;
-            $transaction->setBuyer($this->getBuyerInstance());
+            $transaction->setBuyer($user);
             $transaction->setItem($item);
             $transaction->setCoupon($coupon);
-            $transaction->save();
+            $transaction->setStatus(TransactionStatus::AWAITING);
+            $this->em->persist($transaction);
+            $this->em->flush();
 
             $parameters = array(
                 'email' => $this->getEmail(),
@@ -145,7 +151,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 'currency' => 'BRL',
                 'itemId1' => $item->getId(),
                 'itemDescription1' => $item->getName(),
-                'itemAmount1' => $item->getValue(),
+                'itemAmount1' => number_format($item->getValue(),2,'.',''),
                 'itemQuantity1' => '1',
                 'itemWeight1' => '0',
                 'reference' => $transaction->getId()
@@ -184,7 +190,59 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             'https://pagseguro.uol.com.br/v2/checkout/payment.html?code=' . $code
         );
         })->value('coupon', null);
+        
+        //callback
+        $controllers->post('/notification', function (Application $app, Request $request) {
 
+            $code = $request->get('notificationCode');
+            $type = $request->get('notificationType');
+
+            if ( $code && $type == 'transaction' ) {
+
+                $client = new Curl();
+                $client->setTimeout(30);
+                $browser = new Browser($client);
+                $response = $browser->get(
+                    "https://ws.pagseguro.uol.com.br/v2/transactions/notifications/$code?email=" . $this->getEmail() . '&token=' . $this->getToken()
+                );
+
+                $xmlContent = $response->getContent();
+                $responseXML = new SimpleXMLElement($xmlContent);
+                
+                $array = array($responseXML);
+                $reference = $array[0]->reference;
+                // $reference = array_shift($responseXML->xpath('/transaction/reference'));
+                if ( ! $reference) {
+                    throw new Exception("Invalid response", 1);
+                }
+
+                // $description = array_shift($responseXML->xpath('/transaction/items/item/description'));
+                $description = $array[0]->items->item->description;
+                if ( ! $description) {
+                    throw new Exception("Invalid response", 1);
+                }
+
+                $transaction = $this->em->getRepository($this->getTransactionClass)->find($reference);
+
+                // $transactionCode = array_shift($responseXML->xpath('/transaction/code'));
+                $transactionCode = $array[0]->code;
+                $transaction->setCode($transactionCode);
+
+                // $transactionStatus = array_shift($responseXML->xpath('/transaction/status'));
+                $transactionStatus = $array[0]->status;
+                $transaction->setStatus($transactionStatus);
+
+                // $transactionSenderEmail = array_shift($responseXML
+                //         ->xpath('/transaction/sender/email'));
+                // $transaction->setEmail((string) $transactionSenderEmail);
+
+                $this->em->persist($transaction);
+                $this->em->flush();
+            }
+            return $app->redirect('/');
+        });
+
+        //fim callback
         return $controllers;
     }   
 }
