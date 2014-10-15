@@ -87,53 +87,33 @@
 	    'orm.auto_generate_proxies' => true
 	));
 
-	$api = new RestControllerProvider();
-	$api->setCache($cache); //Doctrine cache, created in bootstrap.php
-	$api->setEntityNamespace('Skel\Model');
-	//you can set authorization and authentication classes
-	//$api->setAuthenticationService(new \Skel\Service\AuthenticationService);
-	//$api->setAuthorizationService(new \Skel\Service\AuthorizationService);
-	$app->mount('/api', $api);
-
-	$rpc = new RpcControllerProvider();
-	$rpc->setCache($cache); //Doctrine cache, created in bootstrap.php
-	$rpc->setServiceNamespace('Skel\Service');
-	//you can set authorization and authentication classes
-	//$api->setAuthenticationService(new \Skel\Service\AuthenticationService);
-	//$api->setAuthorizationService(new \Skel\Service\AuthorizationService);
-	$app->mount('/rpc', $rpc);
+	$pagseguro = new PagseguroControllerProvider();
+	$pagseguro->setToken('TOKEN');
+	$pagseguro->setEmail('EMAIL');
+	$pagseguro->setTransactionClass('Skel\Model\Transaction');
+	$pagseguro->setBuyerClass('Skel\Model\User');
+	//$pagseguro->setCouponClass('Skel\Model\Coupon');
+	$pagseguro->setItemClass('Skel\Model\Product');
+	$app->mount('/buy', $pagseguro);
 
 
-# How to use Rest
 
-## How to use filter?
+# Interfaces
 
-	http://skel.dev/api/v1/user?filter=name:like:%elton%,password:eq:teste
+- Skel\Model\Transaction must implements Coderockr\Pagseguro\TransactionInterface
 
-	This will query for name LIKE %elton% and password = teste
+- Skel\Model\User must implements Coderockr\Pagseguro\BuyerInterface
 
-## How to use joins?
+- Skel\Model\Coupon must implements Coderockr\Pagseguro\CouponInterface
+	
+- Skel\Model\Product must implements Coderockr\Pagseguro\ItemInterface
 
-	http://skel.dev/api/v1/user?joins=roleColletion:key:eq:admin
 
-	This will query all users with where roleColletion.key = admin
+# Pagseguro configuration
 
-## Operators:
+- Must generate a new Token in Integrações -> Token de segurança
 
-	Use this guide to check what you can put between field:{operator}:value
+- Must configure a url in Integrações -> Notificação de transações. Sample:
 
-	http://docs.doctrine-project.org/en/2.1/reference/query-builder.html#the-expr-class
-
-	You can use `eq` `like` `lt` `lte` `gt` `gte` `neq` and more methods based on key:value
-
-## Combined with Fields, limit, offset
-
-	http://skel.dev/api/v1/user?fields=id,name&limit=10&offset=0
-
-	This set of parameters can be combined with both listed above (filters and joins)
-
-## Count 
-	http://skel.dev/api/v1/user?filter=name:like:%elton%&count=1
-
-	http://skel.dev/api/v1/user?count=1
+	http://server_url/buy/notification
 
