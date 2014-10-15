@@ -55,7 +55,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
      
     public function setBuyerInstance($buyerInstance)
     {
-        if (!in_array('BuyerInterface', class_implements($buyerInstance))) {
+        if (!in_array('Coderockr\Pagseguro\BuyerInterface', class_implements($buyerInstance))) {
             throw new Exception("Class must implements BuyerInterface", 1);
         }
         return $this->buyerInstance = $buyerInstance;
@@ -68,7 +68,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
      
     public function setCouponClass($couponClass)
     {
-        if (!in_array('CouponInterface', class_implements($couponClass))) {
+        if (!in_array('Coderockr\Pagseguro\CouponInterface', class_implements($couponClass))) {
             throw new Exception("Class must implements CouponInterface", 1);
         }
         return $this->couponClass = $couponClass;
@@ -81,7 +81,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
      
     public function setItemClass($itemClass)
     {
-        if (!in_array('ItemInterface', class_implements($itemClass))) {
+        if (!in_array('Coderockr\Pagseguro\ItemInterface', class_implements($itemClass))) {
             throw new Exception("Class must implements ItemInterface", 1);
         }
         return $this->itemClass = $itemClass;
@@ -94,7 +94,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
      
     public function setTransactionClass($transactionClass)
     {
-        if (!in_array('TransactionInterface', class_implements($transactionClass))) {
+        if (!in_array('Coderockr\Pagseguro\TransactionInterface', class_implements($transactionClass))) {
             throw new Exception("Class must implements TransactionInterface", 1);
         }
         return $this->transactionClass = $transactionClass;
