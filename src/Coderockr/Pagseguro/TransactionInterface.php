@@ -41,6 +41,12 @@ interface TransactionInterface
      */
     public function getValue();
 
+    public function setBuyer($buyer);
+
+    public function setItem($item);
+
+    public function setCoupon($coupon);
+
     /**
      * Save a new transaction
      * @return boolean
