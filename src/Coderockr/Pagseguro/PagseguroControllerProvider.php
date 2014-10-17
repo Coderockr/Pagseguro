@@ -15,6 +15,11 @@ use Buzz\Browser;
 
 class PagseguroControllerProvider implements ControllerProviderInterface
 {
+    const CHECKOUT = 'CHECKOUT';
+    const PAYMENT = 'PAYMENT';
+    const NOTIFICATION = 'NOTIFICATION';
+
+    private $config;
     private $token;
     private $email;
     private $buyerClass;
@@ -24,9 +29,41 @@ class PagseguroControllerProvider implements ControllerProviderInterface
     private $em;
     private $log;
 
+    function __constructor() {
+        
+        /**
+         * Default configuration preset the configs to v2 pagseguro
+         * @var array
+         */
+        $this->config = array(
+            $this::CHECKOUT => 'https://ws.pagseguro.uol.com.br/v2/checkout/',
+            $this::PAYMENT => 'https://pagseguro.uol.com.br/v2/checkout/payment.html',
+            $this::NOTIFICATION => 'https://ws.pagseguro.uol.com.br/v2/transactions/notifications/'
+        );
+    }
+
     public function setEntityManager($em)
     {
         $this->em = $em;
+    }
+
+    public function getConfig()
+    {
+        return $this->config;
+    }
+    
+    public function setConfig($config)
+    {
+        if (!isset($config[$this::CHECKOUT]) || 
+            !isset($config[$this::PAYMENT]) || 
+            !isset($config[$this::NOTIFICATION])) {
+
+            throw new Exception(
+                'Config must have checkout, payment and notification URL, see docs for example', 1);
+        }
+
+        $this->config = $config;
+        return $this;
     }
     
     public function getToken()
@@ -117,16 +154,19 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         $controllers = $app['controllers_factory'];
 
         $controllers->get('/{user}/{item}/{coupon}', function (Application $app, $user, $item, $coupon, Request $request) {
+            
             //get user
             $user = $this->em->getRepository($this->getBuyerClass())->find($user);
             if (!$user) {
                 throw new Exception("User not found", 1);
             }
+            
             //get item
             $item = $this->em->getRepository($this->getItemClass())->find($item);
             if (!$item) {
                 throw new Exception("Item not found", 1);
             }
+            
             if ($coupon) {
                 //get coupon
                 $coupon = $this->em->getRepository($this->getCouponClass())->find($coupon);
@@ -134,6 +174,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                     throw new Exception("Coupon not found", 1);
                 }
             }
+            
             //save a transaction to get the id to use in reference
             $className = $this->getTransactionClass();
             $transaction = new $className;
@@ -156,42 +197,48 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 'itemWeight1' => '0',
                 'reference' => $transaction->getId()
             );
-        if ($coupon) {
-            $parameters['extraAmount'] = number_format(-1 * $coupon()->getValue(), 2);
-        }
 
-        $client = new Curl();
-        $client->setTimeout(30);
-        $browser = new Browser($client);
-        $response = $browser->post(
-            'https://ws.pagseguro.uol.com.br/v2/checkout/',
-            array('Content-Type' => 'application/x-www-form-urlencoded; charset=ISO-8859-1'),
-            http_build_query($parameters)
-        );
-        try {
-            $responseXML = new SimpleXMLElement($response->getContent());    
-        } catch (Exception $e) {
-            if ($this->getLog()) {
-                $this->getLog()->addError($e->getMessage());
+            if ($coupon) {
+                $parameters['extraAmount'] = number_format(-1 * $coupon()->getValue(), 2);
             }
-            throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro.", 1);
-        }
-        
-        if (count($responseXML->xpath('/errors')) > 0) {
-            if ($this->getLog()) {
-                $this->getLog()->addError($responseXML->asXml());
-            }
-            throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro: " . $responseXML->asXml(), 1);
-        }
+
+            $client = new Curl();
+            $client->setTimeout(30);
+            $browser = new Browser($client);
             
-        $code = array_shift($responseXML->xpath('/checkout/code'));
+            $response = $browser->post(
+                $this->config[CHECKOUT],
+                array('Content-Type' => 'application/x-www-form-urlencoded; charset=ISO-8859-1'),
+                http_build_query($parameters)
+            );
 
-        return $app->redirect(
-            'https://pagseguro.uol.com.br/v2/checkout/payment.html?code=' . $code
-        );
+            try {
+                $responseXML = new SimpleXMLElement($response->getContent());    
+            } catch (Exception $e) {
+                if ($this->getLog()) {
+                    $this->getLog()->addError($e->getMessage());
+                }
+                throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro.", 1);
+            }
+            
+            if (count($responseXML->xpath('/errors')) > 0) {
+                if ($this->getLog()) {
+                    $this->getLog()->addError($responseXML->asXml());
+                }
+                throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro: " . $responseXML->asXml(), 1);
+            }
+                
+            $code = array_shift($responseXML->xpath('/checkout/code'));
+
+            return $app->redirect(
+                $this->config[PAYMENT] . '?code=' . $code
+            );
+
         })->value('coupon', null);
         
-        //callback
+        /**
+         * This URL will be called by PagSeguro to update the transaction
+         */
         $controllers->post('/notification', function (Application $app, Request $request) {
 
             $code = $request->get('notificationCode');
@@ -203,7 +250,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 $client->setTimeout(30);
                 $browser = new Browser($client);
                 $response = $browser->get(
-                    "https://ws.pagseguro.uol.com.br/v2/transactions/notifications/$code?email=" . $this->getEmail() . '&token=' . $this->getToken()
+                    $this->config[NOTIFICATION] . '$code?email=' . $this->getEmail() . '&token=' . $this->getToken()
                 );
 
                 $xmlContent = $response->getContent();
@@ -211,30 +258,22 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 
                 $array = array($responseXML);
                 $reference = $array[0]->reference;
-                // $reference = array_shift($responseXML->xpath('/transaction/reference'));
+                
                 if ( ! $reference) {
                     throw new Exception("Invalid response", 1);
                 }
 
-                // $description = array_shift($responseXML->xpath('/transaction/items/item/description'));
                 $description = $array[0]->items->item->description;
                 if ( ! $description) {
                     throw new Exception("Invalid response", 1);
                 }
 
                 $transaction = $this->em->getRepository($this->getTransactionClass)->find($reference);
-
-                // $transactionCode = array_shift($responseXML->xpath('/transaction/code'));
                 $transactionCode = $array[0]->code;
                 $transaction->setCode($transactionCode);
 
-                // $transactionStatus = array_shift($responseXML->xpath('/transaction/status'));
                 $transactionStatus = $array[0]->status;
                 $transaction->setStatus($transactionStatus);
-
-                // $transactionSenderEmail = array_shift($responseXML
-                //         ->xpath('/transaction/sender/email'));
-                // $transaction->setEmail((string) $transactionSenderEmail);
 
                 $this->em->persist($transaction);
                 $this->em->flush();
@@ -242,7 +281,20 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             return $app->redirect('/');
         });
 
-        //fim callback
         return $controllers;
     }   
+
+    /**
+     * Sets the value of log.
+     *
+     * @param mixed $log the log 
+     *
+     * @return self
+     */
+    private function _setLog($log)
+    {
+        $this->log = $log;
+
+        return $this;
+    }
 }
