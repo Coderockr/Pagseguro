@@ -29,7 +29,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
     private $em;
     private $log;
 
-    function __constructor() {
+    function __construct() {
         
         /**
          * Default configuration preset the configs to v2 pagseguro
@@ -153,7 +153,13 @@ class PagseguroControllerProvider implements ControllerProviderInterface
         $this->setEntityManager($app['orm.em']);
         $controllers = $app['controllers_factory'];
 
-        $controllers->get('/{user}/{item}/{coupon}', function (Application $app, $user, $item, $coupon, Request $request) {
+        $controllers->get('/{user}/{item}/{redirectUrl}/{coupon}', function (
+            Application $app,
+            $user,
+            $item,
+            $redirectUrl,
+            $coupon,
+            Request $request) {
             
             //get user
             $user = $this->em->getRepository($this->getBuyerClass())->find($user);
@@ -185,10 +191,16 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             $this->em->persist($transaction);
             $this->em->flush();
 
+            if (!$redirectUrl) {
+                $redirectUrl = $item->getRedirectUrl();
+            } else {
+                $redirectUrl = base64_decode($redirectUrl);
+            }
+
             $parameters = array(
                 'email' => $this->getEmail(),
                 'token' => $this->getToken(),
-                'redirectURL' => $item->getRedirectUrl(),
+                'redirectURL' => $redirectUrl,
                 'currency' => 'BRL',
                 'itemId1' => $item->getId(),
                 'itemDescription1' => $item->getName(),
@@ -220,21 +232,20 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 }
                 throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro.", 1);
             }
-            
+
             if (count($responseXML->xpath('/errors')) > 0) {
                 if ($this->getLog()) {
                     $this->getLog()->addError($responseXML->asXml());
                 }
                 throw new Exception("Ocorreu um erro na conexão com o servidor do PagSeguro: " . $responseXML->asXml(), 1);
             }
-                
-            $code = array_shift($responseXML->xpath('/checkout/code'));
-
+            
+            $code = $responseXML->code;
             return $app->redirect(
                 $this->config[PAYMENT] . '?code=' . $code
             );
 
-        })->value('coupon', null);
+        })->value('redirectUrl', null)->value('coupon', null);
         
         /**
          * This URL will be called by PagSeguro to update the transaction
@@ -249,8 +260,12 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 $client = new Curl();
                 $client->setTimeout(30);
                 $browser = new Browser($client);
+                
+                $url = $this->config[NOTIFICATION] . $code;
+                $url .= (strpos($url, '?') === false ? '?' : '&');
+
                 $response = $browser->get(
-                    $this->config[NOTIFICATION] . '$code?email=' . $this->getEmail() . '&token=' . $this->getToken()
+                    $url . 'email=' . $this->getEmail() . '&token=' . $this->getToken()
                 );
 
                 $xmlContent = $response->getContent();
@@ -259,26 +274,30 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 $array = array($responseXML);
                 $reference = $array[0]->reference;
                 
-                if ( ! $reference) {
+                if (!$reference) {
                     throw new Exception("Invalid response", 1);
                 }
 
                 $description = $array[0]->items->item->description;
-                if ( ! $description) {
+                if (!$description) {
                     throw new Exception("Invalid response", 1);
                 }
 
-                $transaction = $this->em->getRepository($this->getTransactionClass)->find($reference);
-                $transactionCode = $array[0]->code;
-                $transaction->setCode($transactionCode);
+                $transaction = $this->em->getRepository($this->getTransactionClass())->find($reference);
+                if ($transaction) {
 
-                $transactionStatus = $array[0]->status;
-                $transaction->setStatus($transactionStatus);
+                    $transactionCode = $array[0]->code;
+                    $transaction->setCode($transactionCode);
 
-                $this->em->persist($transaction);
-                $this->em->flush();
+                    $transactionStatus = $array[0]->status;
+                    $transaction->setStatus($transactionStatus);
+
+                    $this->em->persist($transaction);
+                    $this->em->flush();
+                }
             }
-            return $app->redirect('/');
+
+            return new Response('OK', 200);
         });
 
         return $controllers;
@@ -294,7 +313,6 @@ class PagseguroControllerProvider implements ControllerProviderInterface
     private function _setLog($log)
     {
         $this->log = $log;
-
         return $this;
     }
 }
