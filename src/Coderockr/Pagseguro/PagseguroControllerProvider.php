@@ -219,7 +219,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             $browser = new Browser($client);
             
             $response = $browser->post(
-                $this->config[CHECKOUT],
+                $this->config[$this::CHECKOUT],
                 array('Content-Type' => 'application/x-www-form-urlencoded; charset=ISO-8859-1'),
                 http_build_query($parameters)
             );
@@ -242,7 +242,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
             
             $code = $responseXML->code;
             return $app->redirect(
-                $this->config[PAYMENT] . '?code=' . $code
+                $this->config[$this::PAYMENT] . '?code=' . $code
             );
 
         })->value('redirectUrl', null)->value('coupon', null);
@@ -261,7 +261,7 @@ class PagseguroControllerProvider implements ControllerProviderInterface
                 $client->setTimeout(30);
                 $browser = new Browser($client);
                 
-                $url = $this->config[NOTIFICATION] . $code;
+                $url = $this->config[$this::NOTIFICATION] . $code;
                 $url .= (strpos($url, '?') === false ? '?' : '&');
 
                 $response = $browser->get(
